@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify
 import requests
 from requests.adapters import HTTPAdapter
@@ -9,7 +10,7 @@ def get_session():
     session = requests.Session()
     retry = Retry(connect=3, backoff_factor=1)
     adapter = HTTPAdapter(max_retries=retry)
-    session.mount('https://', adapter)
+    session.mount("https://", adapter)
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
     })
@@ -25,10 +26,15 @@ def get_game_icon(session, place_id):
         pass
     return None
 
+@app.route("/health")
+def health():
+    return {"status": "ok"}
+
 @app.route("/search")
 def search_roblox_api():
     query = request.args.get("query")
-    limit = int(request.args.get("limit", 10))  # default 10 oyun
+    limit = int(request.args.get("limit", 10))
+    
     if not query:
         return jsonify({"error": "query parametresi zorunlu"}), 400
     
@@ -38,22 +44,27 @@ def search_roblox_api():
     try:
         response = session.get(url, timeout=20)
         data = response.json()
-        results = data.get("searchResults", [{}])[0].get("contents", [])
+        results = data.get("searchResults", [])
         
         games = []
-        for item in results[:limit]:
-            name = item.get("name")
-            place_id = item.get("rootPlaceId")
-            icon = get_game_icon(session, place_id) if place_id else None
-            games.append({
-                "name": name,
-                "place_id": place_id,
-                "icon": icon
-            })
+        for result in results:
+            for item in result.get("contents", []):
+                place_id = item.get("rootPlaceId")
+                if place_id:
+                    games.append({
+                        "name": item.get("name"),
+                        "place_id": place_id,
+                        "icon": get_game_icon(session, place_id)
+                    })
+                if len(games) >= limit:
+                    break
+            if len(games) >= limit:
+                break
         
         return jsonify({"games": games})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
